@@ -368,8 +368,6 @@
 <!-- Firebase (compat SDK — keeps the same collection().doc() style API) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-<!-- EmailJS (sends the "you've been assigned" email straight from the browser, no backend needed) -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
 <script>
 (function(){
@@ -384,34 +382,29 @@
     appId: "1:498963231685:web:52c04d37063a382669d1ac"
   };
 
-  // ---- EmailJS config: fill these in once you've done the EmailJS setup ----
-  // (Public Key from Account > General; Service ID from Email Services; Template ID from Email Templates)
-  var EMAILJS_PUBLIC_KEY = "Urx8y20y6gYJxBvfY";
-  var EMAILJS_SERVICE_ID = "service_0tm0dha";
-  var EMAILJS_TEMPLATE_ID = "template_lx7gb4d";
-  var TRACKER_URL = "https://nataliewre.github.io/Lost-Management-Tracker/";
+  // ---- Assignment email: opens a ready-written message in the sender's own mail app ----
+  var TRACKER_URL = "https://waikato-real-estate.github.io/Lost-Management-Tracker/";
 
-  var emailjsReady = false;
-  try {
-    if(window.emailjs && EMAILJS_PUBLIC_KEY.indexOf("YOUR_") !== 0){
-      emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-      emailjsReady = true;
-    }
-  } catch(e){ console.error("EmailJS init failed", e); }
-
-  function sendAssignmentEmail(property, staffMember){
-    if(!emailjsReady){ console.warn("EmailJS not configured yet — skipping email."); return; }
-    emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-      to_email: staffMember.email,
-      to_name: staffMember.name,
-      property_address: property.address || "(no address)",
-      tracker_link: TRACKER_URL
-    }).then(function(){
-      toast("Emailed " + staffMember.name);
-    }).catch(function(err){
-      console.error("EmailJS send failed", err);
-      toast("Couldn’t email " + staffMember.name);
-    });
+  function assignmentEmailParts(property, staffMember){
+    var first = (staffMember.name || "").split(" ")[0];
+    var address = property.address || "(no address)";
+    var subject = "Lost management tasks to complete: " + address;
+    var body = "Hi " + first + ",\n\n" +
+      "You've been assigned the lost management tasks for:\n\n" +
+      address + "\n\n" +
+      "Please work through the checklist in the Lost Management Tracker:\n" +
+      TRACKER_URL + "\n\n" +
+      "Thanks!";
+    return { subject: subject, body: body };
+  }
+  function mailtoHref(property, staffMember){
+    var m = assignmentEmailParts(property, staffMember);
+    return "mailto:" + staffMember.email + "?subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
+  }
+  function outlookWebHref(property, staffMember){
+    var m = assignmentEmailParts(property, staffMember);
+    return "https://outlook.office.com/mail/deeplink/compose?to=" + encodeURIComponent(staffMember.email) +
+      "&subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
   }
 
   var STAFF = [
@@ -774,7 +767,15 @@
         STAFF.map(function(s){
           return '<option value="'+escapeHtml(s.email)+'" '+((p.assignedTo && p.assignedTo.email===s.email)?"selected":"")+'>'+escapeHtml(s.name)+'</option>';
         }).join("") +
-      '</select></div>';
+      '</select>';
+    if(p.assignedTo){
+      var first = (p.assignedTo.name || "").split(" ")[0];
+      html += '<div class="email-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">' +
+        '<a class="btn" style="text-decoration:none;display:inline-block;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:7px;padding:7px 12px;font-weight:600;font-size:13px;" href="'+escapeHtml(outlookWebHref(p, p.assignedTo))+'" target="_blank" rel="noopener">Email '+escapeHtml(first)+' (Outlook web)</a>' +
+        '<a class="btn" style="text-decoration:none;display:inline-block;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:7px;padding:7px 12px;font-weight:600;font-size:13px;" href="'+escapeHtml(mailtoHref(p, p.assignedTo))+'">Open in mail app</a>' +
+        '</div>';
+    }
+    html += '</div>';
 
     html += '<div class="field"><label class="field-label" for="fReason">Reason for loss</label><textarea id="fReason" placeholder="What happened?">'+escapeHtml(p.reasonForLoss||"")+'</textarea></div>';
 
@@ -857,7 +858,7 @@
       var staff = staffByEmail(email);
       if(!staff) return;
       patchProperty(p.id, {assignedTo: staff, updatedAt: nowIso()});
-      sendAssignmentEmail(p, staff);
+      toast("Assigned to " + staff.name + " — press “Email " + staff.name.split(" ")[0] + "” to notify them");
     });
 
     var seg = document.getElementById("outcomeSeg");
